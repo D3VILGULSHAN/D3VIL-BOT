@@ -428,7 +428,7 @@ dispatcher.add_handler(UNBAN_HANDLER)
 dispatcher.add_handler(ROAR_HANDLER)
 dispatcher.add_handler(PUNCHME_HANDLER)
 
-__mod_name__ = "BAN/MUTE📍"
+__mod_name__ = "BAN🚫"
 __handlers__ = [
     BAN_HANDLER,
     TEMPBAN_HANDLER,
