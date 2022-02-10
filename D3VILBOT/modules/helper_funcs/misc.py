@@ -3,7 +3,7 @@ from typing import List, Dict
 from telegram import MAX_MESSAGE_LENGTH, InlineKeyboardButton, Bot, ParseMode
 from telegram.error import TelegramError
 
-from D3VILBOT import LOAD, NO_LOAD
+from Mikobot import LOAD, NO_LOAD
 
 
 class EqInlineKeyboardButton(InlineKeyboardButton):
@@ -62,13 +62,13 @@ def paginate_modules(page_n: int, module_dict: Dict, prefix, chat=None) -> List:
             ]
         )
 
-        pairs = [modules[i * 3 : (i + 1) * 3] for i in range((len(modules) + 3 - 1) // 3)]
+    pairs = [modules[i * 3 : (i + 1) * 3] for i in range((len(modules) + 3 - 1) // 3)]
     round_num = len(modules) / 3
     calc = len(modules) - round(round_num)
     if calc in [1, 2]:
         pairs.append([modules[-1]])
     else:
-        pairs += [[EqInlineKeyboardButton("HOME🏠", callback_data="shasa_back")]]
+        pairs += [[EqInlineKeyboardButton("Home", callback_data="luna_back")]]
     return pairs
 
 
