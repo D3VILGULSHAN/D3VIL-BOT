@@ -1,908 +1,725 @@
-import codecs
-import pickle
-from typing import Dict, List, Union
+import html
 
-from D3VILBOT import db
+from telegram import ParseMode, Update
+from telegram.error import BadRequest
+from telegram.ext import CallbackContext, CommandHandler, Filters, run_async
+from telegram.utils.helpers import mention_html
 
-nsfwdb = db.nsfw
-notesdb = db.notes
-filtersdb = db.filters
-warnsdb = db.warns
-karmadb = db.karma
-chatsdb = db.chats
-usersdb = db.users
-gbansdb = db.gban
-coupledb = db.couple
-captchadb = db.captcha
-solved_captcha_db = db.solved_captcha
-captcha_cachedb = db.captcha_cache
-antiservicedb = db.antiservice
-pmpermitdb = db.pmpermit
-welcomedb = db.welcome_text
-blacklist_filtersdb = db.blacklistFilters
-pipesdb = db.pipes
-sudoersdb = db.sudoers
-blacklist_chatdb = db.blacklistChat
-restart_stagedb = db.restart_stage
-flood_toggle_db = db.flood_toggle
-rssdb = db.rss
-lockurl = db.lockurl
-antispam = db.antispam
-nexaub_antif = db.nexa_mongodb
-anitcdb = db.antichannel
-chatbotdb = db.chatbotdb
-spamdb = db.spam
+from D3VILBOT import DRAGONS, dispatcher
+from D3VILBOT.modules.disable import DisableAbleCommandHandler
+from D3VILBOT.modules.helper_funcs.chat_status import (
+    bot_admin,
+    can_pin,
+    can_promote,
+    connection_status,
+    user_admin,
+    ADMIN_CACHE,
+)
+from D3VILBOT.helper_extra.admin_rights import (
+    user_can_pin,
+    user_can_promote,
+    user_can_changeinfo,
+)
 
-def is_spam_on(group_id):
-    data = spamdb.find_one({"group_id": group_id})
-    if not data:
-        return False, None
+from D3VILBOT.modules.helper_funcs.extraction import (
+    extract_user,
+    extract_user_and_text,
+)
+from D3VILBOT.modules.log_channel import loggable
+from D3VILBOT.modules.helper_funcs.alternate import send_message
+from D3VILBOT.modules.helper_funcs.alternate import typing_action
 
-def spam_on(group_id):
-    data = {"group_id":group_id}
+
+@run_async
+@connection_status
+@bot_admin
+@can_promote
+@user_admin
+@loggable
+def promote(update: Update, context: CallbackContext) -> str:
+    bot = context.bot
+    args = context.args
+
+    message = update.effective_message
+    chat = update.effective_chat
+    user = update.effective_user
+
+    promoter = chat.get_member(user.id)
+
+    if (
+        not (promoter.can_promote_members or promoter.status == "creator")
+        and user.id not in DRAGONS
+    ):
+        message.reply_text("You don't have the necessary rights to do that!")
+        return
+
+    user_id = extract_user(message, args)
+
+    if not user_id:
+        message.reply_text(
+            "You don't seem to be referring to a user or the ID specified is incorrect.."
+        )
+        return
+
     try:
-        spamdb.update_one({"group_id": group_id},  {"$set": data}, upsert=True)
+        user_member = chat.get_member(user_id)
     except:
         return
 
-def spam_off(group_id):
-    is_spam = is_spam_on(group_id)
-    if not is_spam:
+    if user_member.status == "administrator" or user_member.status == "creator":
+        message.reply_text("How am I meant to promote someone that's already an admin?")
         return
-    return spamdb.delete_one({"group_id": group_id})      
-    
-        
-async def is_chatbot_on(chat_id):
-    chat = chatbotdb.find_one({"chat_id": chat_id})
-    if not chat:
-        return False
-    return True
 
-async def chatbot_on(chat_id: int):
-    is_chatbt = is_chatbot_on(chat_id)
-    if is_chatbt:
+    if user_id == bot.id:
+        message.reply_text("I can't promote myself! Get an admin to do it for me.")
         return
-    if not is_chatbt:
-         return await chatbotdb.insert_one({"chat_id": chat_id})  
 
-async def chatbot_off(chat_id: int):
-    is_chatbt = is_chatbot_on(chat_id)
-    if not is_chatbt:
-        return 
-    if is_chatbt:
-         return await chatbotdb.delete_one({"chat_id": chat_id})
-        
+    # set same perms as bot - bot can't assign higher perms than itself!
+    bot_member = chat.get_member(bot.id)
 
-async def is_antichnl(group_id):
-    data = anitcdb.find_one({"group_id": group_id})
-    if not data:
-        return False, None
-    else: 
-        return True, data["mode"]
-
-async def antichnl_on(group_id, mode):
-    data = {
-        "group_id":group_id,
-        "mode":(mode)}
     try:
-        anitcdb.update_one({"group_id": group_id},  {"$set": data}, upsert=True)
-    except:
-        return
-
-
-def antichnl_off(group_id):
-    stark = anitcdb.find_one({"group_id": group_id})
-    if not stark:
-        return False
-    else:
-        anitcdb.delete_one({"group_id": group_id})
-        return True
-
-
-# To on / off / get anti functions
-async def set_anti_func(chat_id, status, mode):
-    anti_f = await nexaub_antif.find_one({"_id": chat_id})
-    if anti_f:
-        await nexaub_antif.update_one({"_id": chat_id}, {"$set": {"status": status, "mode": mode}})
-    else:
-        await nexaub_antif.insert_one({"_id": chat_id, "status": status, "mode": mode})
-
-async def get_anti_func(chat_id):
-    anti_f = await nexaub_antif.find_one({"_id": chat_id})
-    if not anti_f:
-        return None
-    else:
-        snm = [anti_f["status"], anti_f["mode"]]
-        return snm
-
-async def del_anti_func(chat_id):
-    anti_f = await nexaub_antif.find_one({"_id": chat_id})
-    if anti_f:
-        await nexaub_antif.delete_one({"_id": chat_id})
-        return True
-    else:
-        return False
-
-async def is_spam_enabled (chat_id: int) -> bool:
-    chat = await antispam.find_one({"chat_id": chat_id})
-    return not chat
-
-
-async def enable_spam(chat_id: int):
-    is_spam = await is_spam_enabled(chat_id)
-    if is_spam:
-        return
-    return await antispam.delete_one({"chat_id": chat_id})
-
-
-async def disable_spam(chat_id: int):
-    is_spam = await is_spam_enabled(chat_id)
-    if not is_spam:
-        return
-
-async def url_on(chat_id,status):
-    anti_f = await lockurl.find_one({"_id": chat_id},{"$set": {"status": status}})
-    if anti_f:
-        await lockurl.update_one({"_id": chat_id})
-    else:
-        await lockurl.insert_one({"_id": chat_id, "status": status})
-
-async def is_urlon(chat_id):
-    anti_f = await lockurl.find_one({"_id": chat_id})
-    if not anti_f:
-        return None
-
-async def url_off(chat_id):
-    anti_f = await lockurl.find_one({"_id": chat_id})
-    if anti_f:
-        await lockurl.delete_one({"_id": chat_id})
-        return True
-    else:
-        return False    
-
-
-
-
-"""NSFW System"""
-
-def is_nsfw_on(group_id):
-    data = nsfwdb.find_one({"group_id": group_id})
-    if not data:
-        return False, None
-
-
-def nsfw_on(group_id):
-    data = {"group_id":group_id}
-    try:
-        nsfwdb.update_one({"group_id": group_id},  {"$set": data}, upsert=True)
-    except:
-        return
-
-def nsfw_off(group_id):
-    is_spam = is_nsfw_on(group_id)
-    if not is_spam:
-        return
-    return nsfwdb.delete_one({"group_id": group_id}) 
-
-def obj_to_str(obj):
-    if not obj:
-        return False
-    string = codecs.encode(pickle.dumps(obj), "base64").decode()
-    return string
-
-
-def str_to_obj(string: str):
-    obj = pickle.loads(codecs.decode(string.encode(), "base64"))
-    return obj
-
-
-async def get_notes_count() -> dict:
-    chats = notesdb.find({"chat_id": {"$exists": 1}})
-    if not chats:
-        return {}
-    chats_count = 0
-    notes_count = 0
-    for chat in await chats.to_list(length=1000000000):
-        notes_name = await get_note_names(chat["chat_id"])
-        notes_count += len(notes_name)
-        chats_count += 1
-    return {"chats_count": chats_count, "notes_count": notes_count}
-
-
-async def _get_notes(chat_id: int) -> Dict[str, int]:
-    _notes = await notesdb.find_one({"chat_id": chat_id})
-    if not _notes:
-        return {}
-    return _notes["notes"]
-
-
-async def get_note_names(chat_id: int) -> List[str]:
-    _notes = []
-    for note in await _get_notes(chat_id):
-        _notes.append(note)
-    return _notes
-
-
-async def get_note(chat_id: int, name: str) -> Union[bool, dict]:
-    name = name.lower().strip()
-    _notes = await _get_notes(chat_id)
-    if name in _notes:
-        return _notes[name]
-    return False
-
-
-async def save_note(chat_id: int, name: str, note: dict):
-    name = name.lower().strip()
-    _notes = await _get_notes(chat_id)
-    _notes[name] = note
-
-    await notesdb.update_one(
-        {"chat_id": chat_id}, {"$set": {"notes": _notes}}, upsert=True
-    )
-
-
-async def delete_note(chat_id: int, name: str) -> bool:
-    notesd = await _get_notes(chat_id)
-    name = name.lower().strip()
-    if name in notesd:
-        del notesd[name]
-        await notesdb.update_one(
-            {"chat_id": chat_id},
-            {"$set": {"notes": notesd}},
-            upsert=True,
+        bot.promoteChatMember(
+            chat.id,
+            user_id,
+            can_change_info=bot_member.can_change_info,
+            can_post_messages=bot_member.can_post_messages,
+            can_edit_messages=bot_member.can_edit_messages,
+            can_delete_messages=bot_member.can_delete_messages,
+            can_invite_users=bot_member.can_invite_users,
+            # can_promote_members=bot_member.can_promote_members,
+            can_restrict_members=bot_member.can_restrict_members,
+            can_pin_messages=bot_member.can_pin_messages,
         )
-        return True
-    return False
+    except BadRequest as err:
+        if err.message == "User_not_mutual_contact":
+            message.reply_text("I can't promote someone who isn't in the group.")
+        else:
+            message.reply_text("An error occured while promoting.")
+        return
 
-
-async def get_filters_count() -> dict:
-    chats = filtersdb.find({"chat_id": {"$lt": 0}})
-    if not chats:
-        return {}
-    chats_count = 0
-    filters_count = 0
-    for chat in await chats.to_list(length=1000000000):
-        filters_name = await get_filters_names(chat["chat_id"])
-        filters_count += len(filters_name)
-        chats_count += 1
-    return {
-        "chats_count": chats_count,
-        "filters_count": filters_count,
-    }
-
-
-async def _get_filters(chat_id: int) -> Dict[str, int]:
-    _filters = await filtersdb.find_one({"chat_id": chat_id})
-    if not _filters:
-        return {}
-    return _filters["filters"]
-
-
-async def get_filters_names(chat_id: int) -> List[str]:
-    _filters = []
-    for _filter in await _get_filters(chat_id):
-        _filters.append(_filter)
-    return _filters
-
-
-async def get_filter(chat_id: int, name: str) -> Union[bool, dict]:
-    name = name.lower().strip()
-    _filters = await _get_filters(chat_id)
-    if name in _filters:
-        return _filters[name]
-    return False
-
-
-async def save_filter(chat_id: int, name: str, _filter: dict):
-    name = name.lower().strip()
-    _filters = await _get_filters(chat_id)
-    _filters[name] = _filter
-    await filtersdb.update_one(
-        {"chat_id": chat_id},
-        {"$set": {"filters": _filters}},
-        upsert=True,
+    bot.sendMessage(
+        chat.id,
+        f"Sucessfully promoted <b>{user_member.user.first_name or user_id}</b>!",
+        parse_mode=ParseMode.HTML,
     )
 
-
-async def delete_filter(chat_id: int, name: str) -> bool:
-    filtersd = await _get_filters(chat_id)
-    name = name.lower().strip()
-    if name in filtersd:
-        del filtersd[name]
-        await filtersdb.update_one(
-            {"chat_id": chat_id},
-            {"$set": {"filters": filtersd}},
-            upsert=True,
-        )
-        return True
-    return False
-
-
-async def int_to_alpha(user_id: int) -> str:
-    alphabet = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
-    text = ""
-    user_id = str(user_id)
-    for i in user_id:
-        text += alphabet[int(i)]
-    return text
-
-
-async def alpha_to_int(user_id_alphabet: str) -> int:
-    alphabet = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
-    user_id = ""
-    for i in user_id_alphabet:
-        index = alphabet.index(i)
-        user_id += str(index)
-    user_id = int(user_id)
-    return user_id
-
-
-async def get_warns_count() -> dict:
-    chats = warnsdb.find({"chat_id": {"$lt": 0}})
-    if not chats:
-        return {}
-    chats_count = 0
-    warns_count = 0
-    for chat in await chats.to_list(length=100000000):
-        for user in chat["warns"]:
-            warns_count += chat["warns"][user]["warns"]
-        chats_count += 1
-    return {"chats_count": chats_count, "warns_count": warns_count}
-
-
-async def get_warns(chat_id: int) -> Dict[str, int]:
-    warns = await warnsdb.find_one({"chat_id": chat_id})
-    if not warns:
-        return {}
-    return warns["warns"]
-
-
-async def get_warn(chat_id: int, name: str) -> Union[bool, dict]:
-    name = name.lower().strip()
-    warns = await get_warns(chat_id)
-    if name in warns:
-        return warns[name]
-
-
-async def add_warn(chat_id: int, name: str, warn: dict):
-    name = name.lower().strip()
-    warns = await get_warns(chat_id)
-    warns[name] = warn
-
-    await warnsdb.update_one(
-        {"chat_id": chat_id}, {"$set": {"warns": warns}}, upsert=True
+    log_message = (
+        f"<b>{html.escape(chat.title)}:</b>\n"
+        f"USER PROMOTED SUCCESSFULLY\n"
+        f"<b>Admin:</b> {mention_html(user.id, user.first_name)}\n"
+        f"<b>User:</b> {mention_html(user_member.user.id, user_member.user.first_name)}"
     )
 
-
-async def remove_warns(chat_id: int, name: str) -> bool:
-    warnsd = await get_warns(chat_id)
-    name = name.lower().strip()
-    if name in warnsd:
-        del warnsd[name]
-        await warnsdb.update_one(
-            {"chat_id": chat_id},
-            {"$set": {"warns": warnsd}},
-            upsert=True,
-        )
-        return True
-    return False
-
-
-async def get_karmas_count() -> dict:
-    chats = karmadb.find({"chat_id": {"$lt": 0}})
-    if not chats:
-        return {}
-    chats_count = 0
-    karmas_count = 0
-    for chat in await chats.to_list(length=1000000):
-        for i in chat["karma"]:
-            karma_ = chat["karma"][i]["karma"]
-            if karma_ > 0:
-                karmas_count += karma_
-        chats_count += 1
-    return {"chats_count": chats_count, "karmas_count": karmas_count}
-
-
-async def user_global_karma(user_id) -> int:
-    chats = karmadb.find({"chat_id": {"$lt": 0}})
-    if not chats:
-        return 0
-    total_karma = 0
-    for chat in await chats.to_list(length=1000000):
-        karma = await get_karma(chat["chat_id"], await int_to_alpha(user_id))
-        if karma and (int(karma["karma"]) > 0):
-            total_karma += int(karma["karma"])
-    return total_karma
-
-
-async def get_karmas(chat_id: int) -> Dict[str, int]:
-    karma = await karmadb.find_one({"chat_id": chat_id})
-    if not karma:
-        return {}
-    return karma["karma"]
-
-
-async def get_karma(chat_id: int, name: str) -> Union[bool, dict]:
-    name = name.lower().strip()
-    karmas = await get_karmas(chat_id)
-    if name in karmas:
-        return karmas[name]
-
-
-async def update_karma(chat_id: int, name: str, karma: dict):
-    name = name.lower().strip()
-    karmas = await get_karmas(chat_id)
-    karmas[name] = karma
-    await karmadb.update_one(
-        {"chat_id": chat_id}, {"$set": {"karma": karmas}}, upsert=True
-    )
-
-
-async def is_karma_on(chat_id: int) -> bool:
-    chat = await karmadb.find_one({"chat_id_toggle": chat_id})
-    if not chat:
-        return True
-    return False
-
-
-async def karma_on(chat_id: int):
-    is_karma = await is_karma_on(chat_id)
-    if is_karma:
-        return
-    return await karmadb.delete_one({"chat_id_toggle": chat_id})
-
-
-async def karma_off(chat_id: int):
-    is_karma = await is_karma_on(chat_id)
-    if not is_karma:
-        return
-    return await karmadb.insert_one({"chat_id_toggle": chat_id})
-
-
-async def is_served_chat(chat_id: int) -> bool:
-    chat = await chatsdb.find_one({"chat_id": chat_id})
-    if not chat:
-        return False
-    return True
-
-
-async def get_served_chats() -> list:
-    chats = chatsdb.find({"chat_id": {"$lt": 0}})
-    if not chats:
-        return []
-    chats_list = []
-    for chat in await chats.to_list(length=1000000000):
-        chats_list.append(chat)
-    return chats_list
-
-
-async def add_served_chat(chat_id: int):
-    is_served = await is_served_chat(chat_id)
-    if is_served:
-        return
-    return await chatsdb.insert_one({"chat_id": chat_id})
-
-
-async def remove_served_chat(chat_id: int):
-    is_served = await is_served_chat(chat_id)
-    if not is_served:
-        return
-    return await chatsdb.delete_one({"chat_id": chat_id})
-
-
-
-async def is_served_user(user_id: int) -> bool:
-    user = await usersdb.find_one({"user_id": user_id})
-    if not user:
-        return False
-    return True
-
-
-async def get_served_users() -> list:
-    users = usersdb.find({"user_id": {"$gt": 0}})
-    if not users:
-        return []
-    users_list = []
-    for user in await users.to_list(length=1000000000):
-        users_list.append(user)
-    return users_list
-
-
-async def add_served_user(user_id: int):
-    is_served = await is_served_user(user_id)
-    if is_served:
-        return
-    return await usersdb.insert_one({"user_id": user_id})
-
-
-async def get_gbans_count() -> int:
-    users = gbansdb.find({"user_id": {"$gt": 0}})
-    users = await users.to_list(length=100000)
-    return len(users)
-
-
-async def is_gbanned_user(user_id: int) -> bool:
-    user = await gbansdb.find_one({"user_id": user_id})
-    if not user:
-        return False
-    return True
-
-
-async def add_gban_user(user_id: int):
-    is_gbanned = await is_gbanned_user(user_id)
-    if is_gbanned:
-        return
-    return await gbansdb.insert_one({"user_id": user_id})
-
-
-async def remove_gban_user(user_id: int):
-    is_gbanned = await is_gbanned_user(user_id)
-    if not is_gbanned:
-        return
-    return await gbansdb.delete_one({"user_id": user_id})
-
-
-async def _get_lovers(chat_id: int):
-    lovers = await coupledb.find_one({"chat_id": chat_id})
-    if not lovers:
-        return {}
-    return lovers["couple"]
-
-
-async def get_couple(chat_id: int, date: str):
-    lovers = await _get_lovers(chat_id)
-    if date in lovers:
-        return lovers[date]
-    return False
-
-
-async def save_couple(chat_id: int, date: str, couple: dict):
-    lovers = await _get_lovers(chat_id)
-    lovers[date] = couple
-    await coupledb.update_one(
-        {"chat_id": chat_id},
-        {"$set": {"couple": lovers}},
-        upsert=True,
-    )
-
-
-async def is_captcha_on(chat_id: int) -> bool:
-    chat = await captchadb.find_one({"chat_id": chat_id})
-    if not chat:
-        return False
-    return True
-
-
-async def captcha_off(chat_id: int):
-    is_captcha = await is_captcha_on(chat_id)
-    if not is_captcha:
-        return
-    return await captchadb.delete_one({"chat_id": chat_id})
-
-
-async def captcha_on(chat_id: int):
-    is_captcha = await is_captcha_on(chat_id)
-    if is_captcha:
-        return
-    return await captchadb.insert_one({"chat_id": chat_id})
-
-
-async def has_solved_captcha_once(chat_id: int, user_id: int):
-    has_solved = await solved_captcha_db.find_one(
-        {"chat_id": chat_id, "user_id": user_id}
-    )
-    return bool(has_solved)
-
-
-async def save_captcha_solved(chat_id: int, user_id: int):
-    return await solved_captcha_db.update_one(
-        {"chat_id": chat_id},
-        {"$set": {"user_id": user_id}},
-        upsert=True,
-    )
-
-
-async def is_antiservice_on(chat_id: int) -> bool:
-    chat = await antiservicedb.find_one({"chat_id": chat_id})
-    if not chat:
-        return True
-    return False
-
-
-async def antiservice_on(chat_id: int):
-    is_antiservice = await is_antiservice_on(chat_id)
-    if is_antiservice:
-        return
-    return await antiservicedb.delete_one({"chat_id": chat_id})
-
-
-async def antiservice_off(chat_id: int):
-    is_antiservice = await is_antiservice_on(chat_id)
-    if not is_antiservice:
-        return
-    return await antiservicedb.insert_one({"chat_id": chat_id})
-
-
-async def is_pmpermit_approved(user_id: int) -> bool:
-    user = await pmpermitdb.find_one({"user_id": user_id})
-    if not user:
-        return False
-    return True
-
-
-async def approve_pmpermit(user_id: int):
-    is_pmpermit = await is_pmpermit_approved(user_id)
-    if is_pmpermit:
-        return
-    return await pmpermitdb.insert_one({"user_id": user_id})
-
-
-async def disapprove_pmpermit(user_id: int):
-    is_pmpermit = await is_pmpermit_approved(user_id)
-    if not is_pmpermit:
-        return
-    return await pmpermitdb.delete_one({"user_id": user_id})
-
-
-async def get_welcome(chat_id: int) -> str:
-    text = await welcomedb.find_one({"chat_id": chat_id})
-    if not text:
+    return log_message
+
+
+@run_async
+@connection_status
+@bot_admin
+@can_promote
+@user_admin
+@loggable
+def demote(update: Update, context: CallbackContext) -> str:
+    bot = context.bot
+    args = context.args
+
+    chat = update.effective_chat
+    message = update.effective_message
+    user = update.effective_user
+
+    user_id = extract_user(message, args)
+
+    if user_can_promote(chat, user, context.bot.id) is False:
+        message.reply_text("You don't have enough rights to demote someone!")
         return ""
-    return text["text"]
 
-
-async def set_welcome(chat_id: int, text: str):
-    return await welcomedb.update_one(
-        {"chat_id": chat_id}, {"$set": {"text": text}}, upsert=True
-    )
-
-
-async def del_welcome(chat_id: int):
-    return await welcomedb.delete_one({"chat_id": chat_id})
-
-
-async def update_captcha_cache(captcha_dict):
-    pickle = obj_to_str(captcha_dict)
-    await captcha_cachedb.delete_one({"captcha": "cache"})
-    if not pickle:
-        return
-    await captcha_cachedb.update_one(
-        {"captcha": "cache"},
-        {"$set": {"pickled": pickle}},
-        upsert=True,
-    )
-
-
-async def get_captcha_cache():
-    cache = await captcha_cachedb.find_one({"captcha": "cache"})
-    if not cache:
-        return []
-    return str_to_obj(cache["pickled"])
-
-
-async def get_blacklist_filters_count() -> dict:
-    chats = blacklist_filtersdb.find({"chat_id": {"$lt": 0}})
-    if not chats:
-        return {"chats_count": 0, "filters_count": 0}
-    chats_count = 0
-    filters_count = 0
-    for chat in await chats.to_list(length=1000000000):
-        filters = await get_blacklisted_words(chat["chat_id"])
-        filters_count += len(filters)
-        chats_count += 1
-    return {
-        "chats_count": chats_count,
-        "filters_count": filters_count,
-    }
-
-
-async def get_blacklisted_words(chat_id: int) -> List[str]:
-    _filters = await blacklist_filtersdb.find_one({"chat_id": chat_id})
-    if not _filters:
-        return []
-    return _filters["filters"]
-
-
-async def save_blacklist_filter(chat_id: int, word: str):
-    word = word.lower().strip()
-    _filters = await get_blacklisted_words(chat_id)
-    _filters.append(word)
-    await blacklist_filtersdb.update_one(
-        {"chat_id": chat_id},
-        {"$set": {"filters": _filters}},
-        upsert=True,
-    )
-
-
-async def delete_blacklist_filter(chat_id: int, word: str) -> bool:
-    filtersd = await get_blacklisted_words(chat_id)
-    word = word.lower().strip()
-    if word in filtersd:
-        filtersd.remove(word)
-        await blacklist_filtersdb.update_one(
-            {"chat_id": chat_id},
-            {"$set": {"filters": filtersd}},
-            upsert=True,
+    if not user_id:
+        message.reply_text(
+            "You don't seem to be referring to a user or the ID specified is incorrect.."
         )
-        return True
-    return False
-
-
-async def activate_pipe(from_chat_id: int, to_chat_id: int, fetcher: str):
-    pipes = await show_pipes()
-    pipe = {
-        "from_chat_id": from_chat_id,
-        "to_chat_id": to_chat_id,
-        "fetcher": fetcher,
-    }
-    pipes.append(pipe)
-    return await pipesdb.update_one(
-        {"pipe": "pipe"}, {"$set": {"pipes": pipes}}, upsert=True
-    )
-
-
-async def deactivate_pipe(from_chat_id: int, to_chat_id: int):
-    pipes = await show_pipes()
-    if not pipes:
         return
-    for pipe in pipes:
-        if (
-            pipe["from_chat_id"] == from_chat_id
-            and pipe["to_chat_id"] == to_chat_id
-        ):
-            pipes.remove(pipe)
-    return await pipesdb.update_one(
-        {"pipe": "pipe"}, {"$set": {"pipes": pipes}}, upsert=True
-    )
 
-
-async def is_pipe_active(from_chat_id: int, to_chat_id: int) -> bool:
-    for pipe in await show_pipes():
-        if (
-            pipe["from_chat_id"] == from_chat_id
-            and pipe["to_chat_id"] == to_chat_id
-        ):
-            return True
-
-
-async def show_pipes() -> list:
-    pipes = await pipesdb.find_one({"pipe": "pipe"})
-    if not pipes:
-        return []
-    return pipes["pipes"]
-
-
-async def get_sudoers() -> list:
-    sudoers = await sudoersdb.find_one({"sudo": "sudo"})
-    if not sudoers:
-        return []
-    return sudoers["sudoers"]
-
-
-async def add_sudo(user_id: int) -> bool:
-    sudoers = await get_sudoers()
-    sudoers.append(user_id)
-    await sudoersdb.update_one(
-        {"sudo": "sudo"}, {"$set": {"sudoers": sudoers}}, upsert=True
-    )
-    return True
-
-
-async def remove_sudo(user_id: int) -> bool:
-    sudoers = await get_sudoers()
-    sudoers.remove(user_id)
-    await sudoersdb.update_one(
-        {"sudo": "sudo"}, {"$set": {"sudoers": sudoers}}, upsert=True
-    )
-    return True
-
-
-async def blacklisted_chats() -> list:
-    chats = blacklist_chatdb.find({"chat_id": {"$lt": 0}})
-    return [chat["chat_id"] for chat in await chats.to_list(length=1000000000)]
-
-
-async def blacklist_chat(chat_id: int) -> bool:
-    if not await blacklist_chatdb.find_one({"chat_id": chat_id}):
-        await blacklist_chatdb.insert_one({"chat_id": chat_id})
-        return True
-    return False
-
-
-async def whitelist_chat(chat_id: int) -> bool:
-    if await blacklist_chatdb.find_one({"chat_id": chat_id}):
-        await blacklist_chatdb.delete_one({"chat_id": chat_id})
-        return True
-    return False
-
-
-async def start_restart_stage(chat_id: int, message_id: int):
-    await restart_stagedb.update_one(
-        {"something": "something"},
-        {
-            "$set": {
-                "chat_id": chat_id,
-                "message_id": message_id,
-            }
-        },
-        upsert=True,
-    )
-
-
-async def clean_restart_stage() -> dict:
-    data = await restart_stagedb.find_one({"something": "something"})
-    if not data:
-        return {}
-    await restart_stagedb.delete_one({"something": "something"})
-    return {
-        "chat_id": data["chat_id"],
-        "message_id": data["message_id"],
-    }
-
-
-async def is_flood_on(chat_id: int) -> bool:
-    chat = await flood_toggle_db.find_one({"chat_id": chat_id})
-    if not chat:
-        return True
-    return False
-
-
-async def flood_on(chat_id: int):
-    is_flood = await is_flood_on(chat_id)
-    if is_flood:
+    try:
+        user_member = chat.get_member(user_id)
+    except:
         return
-    return await flood_toggle_db.delete_one({"chat_id": chat_id})
 
-
-async def flood_off(chat_id: int):
-    is_flood = await is_flood_on(chat_id)
-    if not is_flood:
+    if user_member.status == "creator":
+        message.reply_text("This person CREATED the chat, how would I demote them?")
         return
-    return await flood_toggle_db.insert_one({"chat_id": chat_id})
+
+    if not user_member.status == "administrator":
+        message.reply_text("Can't demote what wasn't promoted!")
+        return
+
+    if user_id == bot.id:
+        message.reply_text("I can't demote myself! Get an admin to do it for me.")
+        return
+
+    try:
+        bot.promoteChatMember(
+            chat.id,
+            user_id,
+            can_change_info=False,
+            can_post_messages=False,
+            can_edit_messages=False,
+            can_delete_messages=False,
+            can_invite_users=False,
+            can_restrict_members=False,
+            can_pin_messages=False,
+            can_promote_members=False,
+        )
+
+        bot.sendMessage(
+            chat.id,
+            f"Sucessfully demoted <b>{user_member.user.first_name or user_id}</b>!",
+            parse_mode=ParseMode.HTML,
+        )
+
+        log_message = (
+            f"<b>{html.escape(chat.title)}:</b>\n"
+            f"USER DEMOTED SUCCESSFULLY\n"
+            f"<b>Admin:</b> {mention_html(user.id, user.first_name)}\n"
+            f"<b>User:</b> {mention_html(user_member.user.id, user_member.user.first_name)}"
+        )
+
+        return log_message
+    except BadRequest:
+        message.reply_text(
+            "Could not demote. I might not be admin, or the admin status was appointed by another"
+            " user, so I can't act upon them!"
+        )
+        return
 
 
-async def add_rss_feed(chat_id: int, url: str, last_title: str):
-    return await rssdb.update_one(
-        {"chat_id": chat_id},
-        {"$set": {"url": url, "last_title": last_title}},
-        upsert=True,
+@run_async
+@user_admin
+def refresh_admin(update, _):
+    try:
+        ADMIN_CACHE.pop(update.effective_chat.id)
+    except KeyError:
+        pass
+
+    update.effective_message.reply_text("Admins cache refreshed!")
+
+
+@run_async
+@connection_status
+@bot_admin
+@can_promote
+@user_admin
+def set_title(update: Update, context: CallbackContext):
+    bot = context.bot
+    args = context.args
+
+    chat = update.effective_chat
+    message = update.effective_message
+
+    user_id, title = extract_user_and_text(message, args)
+    try:
+        user_member = chat.get_member(user_id)
+    except:
+        return
+
+    if not user_id:
+        message.reply_text(
+            "You don't seem to be referring to a user or the ID specified is incorrect.."
+        )
+        return
+
+    if user_member.status == "creator":
+        message.reply_text(
+            "This person CREATED the chat, how can i set custom title for him?"
+        )
+        return
+
+    if user_member.status != "administrator":
+        message.reply_text(
+            "Can't set title for non-admins!\nPromote them first to set custom title!"
+        )
+        return
+
+    if user_id == bot.id:
+        message.reply_text(
+            "I can't set my own title myself! Get the one who made me admin to do it for me."
+        )
+        return
+
+    if not title:
+        message.reply_text("Setting blank title doesn't do anything!")
+        return
+
+    if len(title) > 16:
+        message.reply_text(
+            "The title length is longer than 16 characters.\nTruncating it to 16 characters."
+        )
+
+    try:
+        bot.setChatAdministratorCustomTitle(chat.id, user_id, title)
+    except BadRequest:
+        message.reply_text("I can't set custom title for admins that I didn't promote!")
+        return
+
+    bot.sendMessage(
+        chat.id,
+        f"Sucessfully set title for <code>{user_member.user.first_name or user_id}</code> "
+        f"to <code>{html.escape(title[:16])}</code>!",
+        parse_mode=ParseMode.HTML,
     )
 
 
-async def remove_rss_feed(chat_id: int):
-    return await rssdb.delete_one({"chat_id": chat_id})
+@run_async
+@bot_admin
+@user_admin
+@typing_action
+def setchatpic(update, context):
+    chat = update.effective_chat
+    msg = update.effective_message
+    user = update.effective_user
 
-
-async def update_rss_feed(chat_id: int, last_title: str):
-    return await rssdb.update_one(
-        {"chat_id": chat_id},
-        {"$set": {"last_title": last_title}},
-        upsert=True,
-    )
-
-
-async def is_rss_active(chat_id: int) -> bool:
-    return await rssdb.find_one({"chat_id": chat_id})
-
-
-async def get_rss_feeds() -> list:
-    feeds = rssdb.find({"chat_id": {"$exists": 1}})
-    feeds = await feeds.to_list(length=10000000)
-    if not feeds:
+    if user_can_changeinfo(chat, user, context.bot.id) is False:
+        msg.reply_text("You are missing right to change group info!")
         return
-    data = []
-    for feed in feeds:
-        data.append(
-            dict(
-                chat_id=feed["chat_id"],
-                url=feed["url"],
-                last_title=feed["last_title"],
+
+    if msg.reply_to_message:
+        if msg.reply_to_message.photo:
+            pic_id = msg.reply_to_message.photo[-1].file_id
+        elif msg.reply_to_message.document:
+            pic_id = msg.reply_to_message.document.file_id
+        else:
+            msg.reply_text("You can only set some photo as chat pic!")
+            return
+        dlmsg = msg.reply_text("Just a sec...")
+        tpic = context.bot.get_file(pic_id)
+        tpic.download("gpic.png")
+        try:
+            with open("gpic.png", "rb") as chatp:
+                context.bot.set_chat_photo(int(chat.id), photo=chatp)
+                msg.reply_text("Successfully set new chatpic!")
+        except BadRequest as excp:
+            msg.reply_text(f"Error! {excp.message}")
+        finally:
+            dlmsg.delete()
+            if os.path.isfile("gpic.png"):
+                os.remove("gpic.png")
+    else:
+        msg.reply_text("Reply to some photo or file to set new chat pic!")
+
+
+@run_async
+@bot_admin
+@user_admin
+@typing_action
+def rmchatpic(update, context):
+    chat = update.effective_chat
+    msg = update.effective_message
+    user = update.effective_user
+
+    if user_can_changeinfo(chat, user, context.bot.id) is False:
+        msg.reply_text("You don't have enough rights to delete group photo")
+        return
+    try:
+        context.bot.delete_chat_photo(int(chat.id))
+        msg.reply_text("Successfully deleted chat's profile photo!")
+    except BadRequest as excp:
+        msg.reply_text(f"Error! {excp.message}.")
+        return
+
+
+@run_async
+@bot_admin
+@user_admin
+@typing_action
+def setchat_title(update, context):
+    chat = update.effective_chat
+    msg = update.effective_message
+    user = update.effective_user
+    args = context.args
+
+    if user_can_changeinfo(chat, user, context.bot.id) is False:
+        msg.reply_text("You don't have enough rights to change chat info!")
+        return
+
+    title = " ".join(args)
+    if not title:
+        msg.reply_text("Enter some text to set new title in your chat!")
+        return
+
+    try:
+        context.bot.set_chat_title(int(chat.id), str(title))
+        msg.reply_text(
+            f"Successfully set <b>{title}</b> as new chat title!",
+            parse_mode=ParseMode.HTML,
+        )
+    except BadRequest as excp:
+        msg.reply_text(f"Error! {excp.message}.")
+        return
+
+
+@run_async
+@bot_admin
+@user_admin
+@typing_action
+def set_sticker(update, context):
+    msg = update.effective_message
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if user_can_changeinfo(chat, user, context.bot.id) is False:
+        return msg.reply_text("You're missing rights to change chat info!")
+
+    if msg.reply_to_message:
+        if not msg.reply_to_message.sticker:
+            return msg.reply_text(
+                "You need to reply to some sticker to set chat sticker set!"
             )
+        stkr = msg.reply_to_message.sticker.set_name
+        try:
+            context.bot.set_chat_sticker_set(chat.id, stkr)
+            msg.reply_text(
+                f"Successfully set new group stickers in {chat.title}!")
+        except BadRequest as excp:
+            if excp.message == "Participants_too_few":
+                return msg.reply_text(
+                    "Sorry, due to telegram restrictions chat needs to have minimum 100 members before they can have group stickers!"
+                )
+            msg.reply_text(f"Error! {excp.message}.")
+    else:
+        msg.reply_text(
+            "You need to reply to some sticker to set chat sticker set!")
+
+
+@run_async
+@bot_admin
+@user_admin
+@typing_action
+def set_desc(update, context):
+    msg = update.effective_message
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if user_can_changeinfo(chat, user, context.bot.id) is False:
+        return msg.reply_text("You're missing rights to change chat info!")
+
+    tesc = msg.text.split(None, 1)
+    if len(tesc) >= 2:
+        desc = tesc[1]
+    else:
+        return msg.reply_text("Setting empty description won't do anything!")
+    try:
+        if len(desc) > 255:
+            return msg.reply_text(
+                "Description must needs to be under 255 characters!")
+        context.bot.set_chat_description(chat.id, desc)
+        msg.reply_text(
+            f"Successfully updated chat description in {chat.title}!")
+    except BadRequest as excp:
+        msg.reply_text(f"Error! {excp.message}.")
+
+
+def __chat_settings__(chat_id, user_id):
+    return "You are *admin*: `{}`".format(
+        dispatcher.bot.get_chat_member(chat_id, user_id).status
+        in ("administrator", "creator")
+    )
+
+
+@run_async
+@bot_admin
+@can_pin
+@user_admin
+@loggable
+def pin(update: Update, context: CallbackContext) -> str:
+    bot = context.bot
+    args = context.args
+
+    user = update.effective_user
+    chat = update.effective_chat
+
+    is_group = chat.type != "private" and chat.type != "channel"
+    prev_message = update.effective_message.reply_to_message
+
+    if user_can_pin(chat, user, context.bot.id) is False:
+        message.reply_text("You are missing rights to pin a message!")
+        return ""
+
+    is_silent = True
+    if len(args) >= 1:
+        is_silent = not (
+            args[0].lower() == "notify"
+            or args[0].lower() == "loud"
+            or args[0].lower() == "violent"
         )
-    return data
+
+    if prev_message and is_group:
+        try:
+            bot.pinChatMessage(
+                chat.id, prev_message.message_id, disable_notification=is_silent
+            )
+        except BadRequest as excp:
+            if excp.message == "Chat_not_modified":
+                pass
+            else:
+                raise
+        log_message = (
+            f"<b>{html.escape(chat.title)}:</b>\n"
+            f"MESSAGE PINNED SUCCESSFULLY\n"
+            f"<b>Admin:</b> {mention_html(user.id, html.escape(user.first_name))}"
+        )
+
+        return log_message
 
 
-async def get_rss_feeds_count() -> int:
-    feeds = rssdb.find({"chat_id": {"$exists": 1}})
-    feeds = await feeds.to_list(length=10000000)
-    return len(feeds)
+@run_async
+@bot_admin
+@can_pin
+@user_admin
+@loggable
+def unpin(update: Update, context: CallbackContext) -> str:
+    bot = context.bot
+    chat = update.effective_chat
+    user = update.effective_user
+
+    try:
+        bot.unpinChatMessage(chat.id)
+    except BadRequest as excp:
+        if excp.message == "Chat_not_modified":
+            pass
+        else:
+            raise
+
+    log_message = (
+        f"<b>{html.escape(chat.title)}:</b>\n"
+        f"MESSAGE UNPINNED SUCCESSFULLY\n"
+        f"<b>Admin:</b> {mention_html(user.id, html.escape(user.first_name))}"
+    )
+
+    return log_message
+
+
+@run_async
+@bot_admin
+@user_admin
+@connection_status
+def invite(update: Update, context: CallbackContext):
+    bot = context.bot
+    chat = update.effective_chat
+
+    if chat.username:
+        update.effective_message.reply_text(f"https://t.me/{chat.username}")
+    elif chat.type in [chat.SUPERGROUP, chat.CHANNEL]:
+        bot_member = chat.get_member(bot.id)
+        if bot_member.can_invite_users:
+            invitelink = bot.exportChatInviteLink(chat.id)
+            update.effective_message.reply_text(invitelink)
+        else:
+            update.effective_message.reply_text(
+                "I don't have access to the invite link, try changing my permissions!"
+            )
+    else:
+        update.effective_message.reply_text(
+            "I can only give you invite links for supergroups and channels, sorry!"
+        )
+
+
+@run_async
+@connection_status
+def adminlist(update, context):
+    chat = update.effective_chat  # type: Optional[Chat]
+    user = update.effective_user  # type: Optional[User]
+    args = context.args
+    bot = context.bot
+
+    if update.effective_message.chat.type == "private":
+        send_message(update.effective_message, "This command only works in Groups.")
+        return
+
+    chat = update.effective_chat
+    chat_id = update.effective_chat.id
+    chat_name = update.effective_message.chat.title
+
+    try:
+        msg = update.effective_message.reply_text(
+            "Fetching group admins...", parse_mode=ParseMode.HTML
+        )
+    except BadRequest:
+        msg = update.effective_message.reply_text(
+            "Fetching group admins...", quote=False, parse_mode=ParseMode.HTML
+        )
+
+    administrators = bot.getChatAdministrators(chat_id)
+    text = "Admins in <b>{}</b>:".format(html.escape(update.effective_chat.title))
+
+    bot_admin_list = []
+
+    for admin in administrators:
+        user = admin.user
+        status = admin.status
+        custom_title = admin.custom_title
+
+        if user.first_name == "":
+            name = "☠ Deleted Account"
+        else:
+            name = "{}".format(
+                mention_html(
+                    user.id, html.escape(user.first_name + " " + (user.last_name or ""))
+                )
+            )
+
+        if user.is_bot:
+            bot_admin_list.append(name)
+            administrators.remove(admin)
+            continue
+
+        # if user.username:
+        #    name = escape_markdown("@" + user.username)
+        if status == "creator":
+            text += "\n 👑 Creator:"
+            text += "\n<code> • </code>{}\n".format(name)
+
+            if custom_title:
+                text += f"<code> ┗━ {html.escape(custom_title)}</code>\n"
+
+    text += "\n🔱 Admins:"
+
+    custom_admin_list = {}
+    normal_admin_list = []
+
+    for admin in administrators:
+        user = admin.user
+        status = admin.status
+        custom_title = admin.custom_title
+
+        if user.first_name == "":
+            name = "☠ Deleted Account"
+        else:
+            name = "{}".format(
+                mention_html(
+                    user.id, html.escape(user.first_name + " " + (user.last_name or ""))
+                )
+            )
+        # if user.username:
+        #    name = escape_markdown("@" + user.username)
+        if status == "administrator":
+            if custom_title:
+                try:
+                    custom_admin_list[custom_title].append(name)
+                except KeyError:
+                    custom_admin_list.update({custom_title: [name]})
+            else:
+                normal_admin_list.append(name)
+
+    for admin in normal_admin_list:
+        text += "\n<code> • </code>{}".format(admin)
+
+    for admin_group in custom_admin_list.copy():
+        if len(custom_admin_list[admin_group]) == 1:
+            text += "\n<code> • </code>{} | <code>{}</code>".format(
+                custom_admin_list[admin_group][0], html.escape(admin_group)
+            )
+            custom_admin_list.pop(admin_group)
+
+    text += "\n"
+    for admin_group, value in custom_admin_list.items():
+        text += "\n🚨 <code>{}</code>".format(admin_group)
+        for admin in value:
+            text += "\n<code> • </code>{}".format(admin)
+        text += "\n"
+
+    text += "\n🤖 Bots:"
+    for each_bot in bot_admin_list:
+        text += "\n<code> • </code>{}".format(each_bot)
+
+    try:
+        msg.edit_text(text, parse_mode=ParseMode.HTML)
+    except BadRequest:  # if original message is deleted
+        return
+
+
+__help__ = """
+  /admins*:* list of admins in the chat
+*Admins only:*
+  /pin*:* silently pins the message replied to - add `'loud'` or `'notify'` to give notifs to users
+  /unpin*:* unpins the currently pinned message
+  /invitelink*:* gets invitelink
+  /promote*:* promotes the user
+  /demote*:* demotes the user
+  /title <title here>*:* sets a custom title for an admin that the bot promoted
+  /setgtitle <newtitle>*:* Sets new chat title in your group.
+  /setgpic*:* As a reply to file or photo to set group profile pic!
+  /delgpic*:* Same as above but to remove group profile pic.
+  /setsticker*:* As a reply to some sticker to set it as group sticker set!
+  /setdescription <description>*:* Sets new chat description in group.
+  /admincache*:* force refresh the admins list
+  /antispam <on/off/yes/no>*:* Will toggle our antispam tech or return your current settings.
+  /del*:* deletes the message you replied to
+  /purge*:* deletes all messages between this and the replied to message.
+  /purge <integer X>*:* deletes the replied message, and X messages following it if replied to a message.
+  /zombies: counts the number of deleted account in your group
+  /zombies clean: Remove deleted accounts from group..
+*Note:* Night Mode chats get Automatically closed at 12 am(IST)
+and Automatically openned at 6 am(IST) To Prevent Night Spams.
+⚠️ `Read from top`
+"""
+
+ADMINLIST_HANDLER = DisableAbleCommandHandler("admins", adminlist)
+
+PIN_HANDLER = CommandHandler("pin", pin, filters=Filters.group)
+UNPIN_HANDLER = CommandHandler("unpin", unpin, filters=Filters.group)
+
+INVITE_HANDLER = DisableAbleCommandHandler("invitelink", invite)
+
+PROMOTE_HANDLER = DisableAbleCommandHandler("promote", promote)
+DEMOTE_HANDLER = DisableAbleCommandHandler("demote", demote)
+
+SET_TITLE_HANDLER = CommandHandler("title", set_title)
+ADMIN_REFRESH_HANDLER = CommandHandler(
+    "admincache", refresh_admin, filters=Filters.group
+)
+
+CHAT_PIC_HANDLER = CommandHandler("setgpic", setchatpic, filters=Filters.group)
+DEL_CHAT_PIC_HANDLER = CommandHandler(
+    "delgpic", rmchatpic, filters=Filters.group)
+SETCHAT_TITLE_HANDLER = CommandHandler(
+    "setgtitle", setchat_title, filters=Filters.group
+)
+SETSTICKET_HANDLER = CommandHandler(
+    "setsticker", set_sticker, filters=Filters.group)
+SETDESC_HANDLER = CommandHandler(
+    "setdescription",
+    set_desc,
+    filters=Filters.group)
+
+dispatcher.add_handler(ADMINLIST_HANDLER)
+dispatcher.add_handler(PIN_HANDLER)
+dispatcher.add_handler(UNPIN_HANDLER)
+dispatcher.add_handler(INVITE_HANDLER)
+dispatcher.add_handler(PROMOTE_HANDLER)
+dispatcher.add_handler(DEMOTE_HANDLER)
+dispatcher.add_handler(SET_TITLE_HANDLER)
+dispatcher.add_handler(ADMIN_REFRESH_HANDLER)
+dispatcher.add_handler(CHAT_PIC_HANDLER)
+dispatcher.add_handler(DEL_CHAT_PIC_HANDLER)
+dispatcher.add_handler(SETCHAT_TITLE_HANDLER)
+dispatcher.add_handler(SETSTICKET_HANDLER)
+dispatcher.add_handler(SETDESC_HANDLER)
+
+__mod_name__ = "ADMIN 🌟"
+__command_list__ = [
+    "adminlist",
+    "admins",
+    "invitelink",
+    "promote",
+    "demote",
+    "admincache",
+]
+__handlers__ = [
+    ADMINLIST_HANDLER,
+    PIN_HANDLER,
+    UNPIN_HANDLER,
+    INVITE_HANDLER,
+    PROMOTE_HANDLER,
+    DEMOTE_HANDLER,
+    SET_TITLE_HANDLER,
+    ADMIN_REFRESH_HANDLER,
+]
