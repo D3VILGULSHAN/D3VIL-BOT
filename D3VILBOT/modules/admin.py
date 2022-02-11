@@ -2,7 +2,7 @@ import codecs
 import pickle
 from typing import Dict, List, Union
 
-from rose import db
+from D3VILBOT import db
 
 nsfwdb = db.nsfw
 notesdb = db.notes
