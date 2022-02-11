@@ -142,7 +142,7 @@ __help__ = """
 CHATBOT BY D3VIL /CHATBOT
 """
 
-__mod_name__ = "ChatBot"
+__mod_name__ = "CHATBOT😁"
 
 
 CHATBOTK_HANDLER = CommandHandler("chatbot", kuki)
