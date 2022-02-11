@@ -264,7 +264,7 @@ def start(update: Update, context: CallbackContext):
                     [
                         InlineKeyboardButton(
                             text="🥳 UPDATES 🥳",
-                            url="https://t.me/D3VIL_GFX",
+                            url="https://t.me/D3VIL_BOT_OFFICIAL",
                         )
                     ],
                 ]
@@ -505,7 +505,7 @@ def shasa_callback_data(update, context):
                             text="❤️ SUPPORT ❤️", url=f"https://t.me/D3VIL_BOT_SUPPORT"
                         ),
                         InlineKeyboardButton(
-                            text="🥳 UPDATES 🥳", url="https://t.me/D3VIL_GFX"
+                            text="🥳 UPDATES 🥳", url="https://t.me/D3VIL_BOT_OFFICIAL"
                         ),
                     ],
                     [
