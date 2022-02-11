@@ -1170,7 +1170,8 @@ dispatcher.add_handler(CLEAN_SERVICE_HANDLER)
 dispatcher.add_handler(BUTTON_VERIFY_HANDLER)
 dispatcher.add_handler(WELCOME_MUTE_HELP)
 
-__mod_name__ = "Welcome"
+__mod_name__ = "WELCOME 🔥
+e"
 __command_list__ = []
 __handlers__ = [
     NEW_MEM_HANDLER,
