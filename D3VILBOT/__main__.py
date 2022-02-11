@@ -519,22 +519,22 @@ def shasa_callback_data(update, context):
     elif query.data == "shasa_credit":
         query.message.edit_text(
             text=f"<b> D3VIL BOT DEV'S</b>\n"
-            f"\nHere Some Developers Helping in Making The D3VIL BOT",
+            f"\nHERE SOME DEVELOPERS HELPING IN MAKING THE D3VIL BOT",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(
                 [
                     [
                         InlineKeyboardButton(text="DEV👨‍💻", url="https://t.me/Professor_Ashu"),
                         InlineKeyboardButton(
-                            text="GITHUB", url="https://github.com/D3VILGULSHAN/"
+                            text="GITHUB 📍", url="https://github.com/D3VILGULSHAN/"
                         ),
                     ],
                     [
                         InlineKeyboardButton(
-                            text="DEV👨‍💻²", url="https://t.me/D3VILGULSHAN"
+                            text="OWNER 🌟", url="https://t.me/D3VILGULSHAN"
                         ),
                         InlineKeyboardButton(
-                            text="D3VIL", url="https://t.me/Shasa_News/12"
+                            text="D3VIL LOGS 🌟", url="https://t.me/D3VIL_LOGS"
                         ),
                     ],
                     [
